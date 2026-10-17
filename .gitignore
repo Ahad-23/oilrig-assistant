@@ -1,0 +1,57 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables & secrets (CRITICAL: Never commit secrets)
+.env
+*.env.local
+*.env.*.local
+!.env.example
+
+# Testing & Evaluation caches
+.pytest_cache/
+.coverage
+htmlcov/
+.deepeval/
+
+# Datasets & Large Data Lakes (Raw data hosted at https://github.com/FlytBaseAILabs/flytbase-ahc-swe-asset-intelligence-dataset)
+dataset-problem_statement/
+test-data/dataset/
+**/dataset/
+**/evidence/
+evidence/
+
+# Scratch & Temporary Logs
+scratch/
+*.log
+*.sqlite3
+
+# Frontend dependencies & production builds
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+frontend/out/
+
+# IDE & OS-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.agents/

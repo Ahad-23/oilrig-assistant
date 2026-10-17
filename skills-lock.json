@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "deepeval": {
+      "source": "confident-ai/deepeval",
+      "sourceType": "github",
+      "skillPath": "skills/deepeval/SKILL.md",
+      "computedHash": "1323d60e1dcf37c7b6b7eb2774510dbd1a002c72eb799e9ea904c42327180995"
+    },
+    "openui": {
+      "source": "thesysdev/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openui/SKILL.md",
+      "computedHash": "e4f3f38baaf76939dc77ff5ae59ec7fb6ff837319a7223cb8ddb59119885a8a9"
+    }
+  }
+}
