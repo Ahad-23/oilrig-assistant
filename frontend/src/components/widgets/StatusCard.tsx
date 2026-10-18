@@ -45,7 +45,7 @@ export const StatusCard: React.FC<{ data: StatusCardProps }> = ({ data }) => {
       : []);
     if (rawItems && rawItems.length > 0) {
       return (
-        <div className="neo-card neo-shadow-md" style={{ maxWidth: '640px', margin: '12px 0' }}>
+        <div className="neo-card neo-shadow-md" style={{ width: '100%', maxWidth: '780px', margin: '10px 0' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '12px', borderBottom: '2px solid var(--border-color)', paddingBottom: '8px' }}>
             {data.name || raw.title || (assetId ? `${assetId} Summary` : "Summary")}
           </h3>
@@ -68,7 +68,7 @@ export const StatusCard: React.FC<{ data: StatusCardProps }> = ({ data }) => {
   }
 
   return (
-    <div className="neo-card neo-shadow-md" style={{ maxWidth: '640px', margin: '12px 0' }}>
+    <div className="neo-card neo-shadow-md" style={{ width: '100%', maxWidth: '780px', margin: '10px 0' }}>
       {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
         <div>

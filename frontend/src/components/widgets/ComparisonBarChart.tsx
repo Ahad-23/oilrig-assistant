@@ -57,7 +57,7 @@ export const ComparisonBarChart: React.FC<{ data: ComparisonBarChartProps }> = (
   ];
 
   return (
-    <div className="neo-card neo-shadow-md" style={{ margin: '14px 0', maxWidth: '640px' }}>
+    <div className="neo-card neo-shadow-md" style={{ margin: '12px 0', width: '100%', maxWidth: '780px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid var(--border-color)', paddingBottom: '10px', marginBottom: '16px' }}>
         <BarChart3 size={18} />

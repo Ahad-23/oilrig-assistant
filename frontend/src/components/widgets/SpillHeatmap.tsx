@@ -129,7 +129,7 @@ export const SpillHeatmap: React.FC<{ data: SpillHeatmapProps }> = ({ data }) =>
   const maxRowTotal = Math.max(...normalizedRows.map(r => r.total));
 
   return (
-    <div className="neo-card neo-shadow-md" style={{ margin: '14px 0', overflowX: 'auto', maxWidth: '720px' }}>
+    <div className="neo-card neo-shadow-md" style={{ margin: '12px 0', overflowX: 'auto', width: '100%', maxWidth: '860px' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid var(--border-color)', paddingBottom: '10px', marginBottom: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -77,7 +77,7 @@ export const WellMap: React.FC<{ data: WellMapProps }> = ({ data }) => {
   };
 
   return (
-    <div className="neo-card neo-shadow-md" style={{ margin: '14px 0', maxWidth: '640px' }}>
+    <div className="neo-card neo-shadow-md" style={{ margin: '12px 0', width: '100%', maxWidth: '820px' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid var(--border-color)', paddingBottom: '10px', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

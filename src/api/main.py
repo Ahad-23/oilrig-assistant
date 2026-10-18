@@ -152,6 +152,86 @@ async def list_fleet_areas() -> List[Dict[str, Any]]:
         await conn.close()
 
 
+@app.get("/api/map-data")
+async def get_map_data() -> Dict[str, Any]:
+    """Returns all wells with their latest telemetry, coordinates, and real spill events."""
+    conn = await get_raw_asyncpg_connection()
+    try:
+        # 1. Fetch wells with their latest inspection telemetry
+        well_rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (w.asset_id)
+                w.asset_id,
+                w.name,
+                w.well_type,
+                w.area_id,
+                a.name AS area_name,
+                w.lat,
+                w.lon,
+                w.recorded_status,
+                i.wellhead_temp_c,
+                i.ambient_temp_c,
+                i.delta_temp_c,
+                i.is_producing,
+                (COALESCE(i.spill_detected, FALSE) AND (i.is_false_positive_spill IS FALSE OR i.is_false_positive_spill IS NULL)) AS has_active_spill,
+                i.spill_est_volume_bbl,
+                i.notes AS latest_notes,
+                i.inspected_at
+            FROM wells w
+            JOIN fleet_areas a ON w.area_id = a.area_id
+            LEFT JOIN inspections i ON w.asset_id = i.asset_id
+            ORDER BY w.asset_id, i.inspected_at DESC NULLS LAST;
+            """
+        )
+
+        # 2. Fetch areas
+        area_rows = await conn.fetch(
+            """
+            SELECT a.area_id, a.name, a.center_lat, a.center_lon, COUNT(w.asset_id) as well_count
+            FROM fleet_areas a
+            LEFT JOIN wells w ON a.area_id = w.area_id
+            GROUP BY a.area_id, a.name, a.center_lat, a.center_lon
+            ORDER BY a.area_id;
+            """
+        )
+
+        return {
+            "wells": [
+                {
+                    "asset_id": r["asset_id"],
+                    "name": r["name"],
+                    "well_type": r["well_type"],
+                    "area_id": r["area_id"],
+                    "area_name": r["area_name"],
+                    "lat": float(r["lat"]),
+                    "lon": float(r["lon"]),
+                    "recorded_status": r["recorded_status"],
+                    "wellhead_temp_c": round(float(r["wellhead_temp_c"]), 1) if r["wellhead_temp_c"] is not None else None,
+                    "ambient_temp_c": round(float(r["ambient_temp_c"]), 1) if r["ambient_temp_c"] is not None else None,
+                    "delta_temp_c": round(float(r["delta_temp_c"]), 1) if r["delta_temp_c"] is not None else None,
+                    "is_producing": bool(r["is_producing"]) if r["is_producing"] is not None else True,
+                    "has_active_spill": bool(r["has_active_spill"]),
+                    "spill_est_volume_bbl": round(float(r["spill_est_volume_bbl"]), 1) if r["spill_est_volume_bbl"] is not None else None,
+                    "latest_notes": r["latest_notes"],
+                    "inspected_at": r["inspected_at"].isoformat() if r["inspected_at"] else None
+                }
+                for r in well_rows
+            ],
+            "areas": [
+                {
+                    "area_id": r["area_id"],
+                    "name": r["name"],
+                    "center_lat": float(r["center_lat"]),
+                    "center_lon": float(r["center_lon"]),
+                    "well_count": int(r["well_count"])
+                }
+                for r in area_rows
+            ]
+        }
+    finally:
+        await conn.close()
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     """

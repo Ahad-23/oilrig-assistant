@@ -19,7 +19,7 @@ export const ConflictBanner: React.FC<{ data: ConflictBannerProps }> = ({ data }
   const textB = data.source_b_text || raw.source_b_text || "No details provided.";
 
   return (
-    <div className="neo-card neo-shadow-md" style={{ background: '#fffbeb', borderColor: '#b45309', margin: '14px 0', maxWidth: '640px' }}>
+    <div className="neo-card neo-shadow-md" style={{ background: '#fffbeb', borderColor: '#b45309', margin: '12px 0', width: '100%', maxWidth: '780px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #b45309', paddingBottom: '8px', marginBottom: '12px' }}>
         <AlertTriangle size={20} color="#b45309" />
         <h4 style={{ fontSize: '1rem', fontWeight: 800, textTransform: 'uppercase', color: '#92400e' }}>
