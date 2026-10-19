@@ -7,6 +7,12 @@
       "skillPath": "skills/deepeval/SKILL.md",
       "computedHash": "1323d60e1dcf37c7b6b7eb2774510dbd1a002c72eb799e9ea904c42327180995"
     },
+    "langfuse": {
+      "source": "langfuse/skills",
+      "sourceType": "github",
+      "skillPath": "skills/langfuse/SKILL.md",
+      "computedHash": "fa0cd84e21e17dd502f6cd01b0a288ed88966a5f030c787a47ab522ba5c67cee"
+    },
     "openui": {
       "source": "thesysdev/skills",
       "sourceType": "github",

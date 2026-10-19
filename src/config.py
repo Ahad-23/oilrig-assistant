@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     MODEL_TEMPERATURE: float = 0.0
     MODEL_MAX_TOKENS: int = 4096
 
+    # Langfuse Observability Configuration
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
+    LANGFUSE_ENVIRONMENT: str = "development"
+    LANGFUSE_ENABLED: bool = True
+
     # Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent
     DATASET_DIR: Path = (

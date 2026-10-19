@@ -30,12 +30,21 @@ from src.api.schemas import (
     SessionHistoryTurn,
     FeedbackOverrideRequest,
     FeedbackOverrideResponse,
+    FeedbackScoreRequest,
+    FeedbackScoreResponse,
+)
+from src.observability.langfuse_tracer import (
+    is_langfuse_active,
+    score_agent_trace,
+    flush_langfuse,
+    propagate_agent_trace,
+    get_langfuse_callback_handler,
 )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Verifies database connectivity and pre-compiles the LangGraph agent."""
+    """Verifies database connectivity, pre-compiles agent, and manages telemetry lifecycle."""
     conn = await get_raw_asyncpg_connection()
     try:
         await conn.fetchval("SELECT 1;")
@@ -44,7 +53,10 @@ async def lifespan(app: FastAPI):
     
     # Pre-warm LangGraph singleton runnable
     get_agent_app()
-    yield
+    try:
+        yield
+    finally:
+        flush_langfuse()
 
 
 app = FastAPI(
@@ -236,7 +248,7 @@ async def get_map_data() -> Dict[str, Any]:
 async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     """
     Standard synchronous chat invocation.
-    Executes LangGraph agent and returns narrative, citations, and OpenUI payload.
+    Executes LangGraph agent and returns narrative, citations, OpenUI payload, and Langfuse trace ID.
     """
     try:
         result = await invoke_copilot(
@@ -249,7 +261,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             citations=result.get("citations", []),
             generative_ui=result.get("generative_ui"),
             user_id=request.user_id,
-            session_id=request.session_id
+            session_id=request.session_id,
+            trace_id=result.get("trace_id")
         )
     except Exception as e:
         raise HTTPException(
@@ -262,7 +275,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
 async def chat_stream_endpoint(request: ChatRequest):
     """
     Server-Sent Events (SSE) streaming chat endpoint.
-    Emits progress status, token stream, citations, and generative UI payloads.
+    Emits progress status, token stream, citations, generative UI payloads, and Langfuse trace ID.
     """
     async def event_generator() -> AsyncGenerator[Dict[str, str], None]:
         app_graph = get_agent_app()
@@ -290,38 +303,60 @@ async def chat_stream_endpoint(request: ChatRequest):
         final_narrative = ""
         final_citations = []
         final_ui = None
+        handler = get_langfuse_callback_handler()
+        config: Dict[str, Any] = {
+            "run_name": "asset-copilot-stream-run",
+            "metadata": {
+                "langfuse_user_id": request.user_id,
+                "langfuse_session_id": request.session_id,
+                "stream": True,
+            }
+        }
+        if handler:
+            config["callbacks"] = [handler]
 
         try:
-            async for output in app_graph.astream(initial_state, stream_mode="updates"):
-                for node_name, node_output in output.items():
-                    if node_name == "load_context":
-                        yield {
-                            "event": "status",
-                            "data": json.dumps({
-                                "step": "context",
-                                "message": f"Loaded context and active overrides for user {request.user_id}."
-                            })
-                        }
-                    elif node_name == "agent":
-                        yield {
-                            "event": "status",
-                            "data": json.dumps({
-                                "step": "reasoning",
-                                "message": "Gemma 4 evaluated query and selected analytical actions."
-                            })
-                        }
-                    elif node_name == "execute_tools":
-                        yield {
-                            "event": "status",
-                            "data": json.dumps({
-                                "step": "execution",
-                                "message": "Executed deterministic domain queries and vector search."
-                            })
-                        }
-                    elif node_name == "synthesize":
-                        final_narrative = node_output.get("narrative_response", "")
-                        final_citations = node_output.get("citations", [])
-                        final_ui = node_output.get("generative_ui")
+            with propagate_agent_trace(
+                trace_name="Asset Copilot Streaming Agent",
+                user_id=request.user_id,
+                session_id=request.session_id,
+                tags=["asset-copilot", "langgraph", "streaming"],
+                metadata={"user_id": request.user_id, "session_id": request.session_id}
+            ) as client:
+                async for output in app_graph.astream(initial_state, stream_mode="updates", config=config):
+                    for node_name, node_output in output.items():
+                        if node_name == "load_context":
+                            yield {
+                                "event": "status",
+                                "data": json.dumps({
+                                    "step": "context",
+                                    "message": f"Loaded context and active overrides for user {request.user_id}."
+                                })
+                            }
+                        elif node_name == "agent":
+                            yield {
+                                "event": "status",
+                                "data": json.dumps({
+                                    "step": "reasoning",
+                                    "message": "Gemma 4 evaluated query and selected analytical actions."
+                                })
+                            }
+                        elif node_name == "execute_tools":
+                            yield {
+                                "event": "status",
+                                "data": json.dumps({
+                                    "step": "execution",
+                                    "message": "Executed deterministic domain queries and vector search."
+                                })
+                            }
+                        elif node_name == "synthesize":
+                            final_narrative = node_output.get("narrative_response", "")
+                            final_citations = node_output.get("citations", [])
+                            final_ui = node_output.get("generative_ui")
+
+                trace_id = getattr(handler, "last_trace_id", None) if handler else None
+                if not trace_id and client and hasattr(client, "get_current_trace_id"):
+                    trace_id = client.get_current_trace_id()
 
             # Stream narrative tokens for typewriter UI effect
             words = final_narrative.split(" ")
@@ -347,13 +382,14 @@ async def chat_stream_endpoint(request: ChatRequest):
                     "data": json.dumps(final_ui, default=str)
                 }
 
-            # Emit final completion signal
+            # Emit final completion signal with trace_id
             yield {
                 "event": "done",
                 "data": json.dumps({
                     "user_id": request.user_id,
                     "session_id": request.session_id,
-                    "narrative": final_narrative
+                    "narrative": final_narrative,
+                    "trace_id": trace_id
                 })
             }
 
@@ -506,3 +542,35 @@ async def list_recent_overrides() -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
     finally:
         await conn.close()
+
+
+@app.post("/api/feedback/score", response_model=FeedbackScoreResponse)
+async def submit_feedback_score(request: FeedbackScoreRequest) -> FeedbackScoreResponse:
+    """
+    Submits user feedback or human evaluation scores directly to Langfuse.
+    Enables tracking of operator satisfaction, response quality, and RLHF/eval datasets.
+    """
+    try:
+        scored = score_agent_trace(
+            trace_id=request.trace_id,
+            name=request.name,
+            value=request.value,
+            comment=request.comment,
+            metadata={"user_id": request.user_id} if request.user_id else None
+        )
+        if not scored and not is_langfuse_active():
+            return FeedbackScoreResponse(
+                success=True,
+                trace_id=request.trace_id,
+                message="Langfuse inactive; feedback score accepted in offline mode."
+            )
+        return FeedbackScoreResponse(
+            success=scored,
+            trace_id=request.trace_id,
+            message="Score successfully recorded in Langfuse." if scored else "Failed to transmit score to Langfuse."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to submit feedback score: {str(e)}"
+        )

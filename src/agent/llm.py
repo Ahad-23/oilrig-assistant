@@ -41,6 +41,9 @@ def strip_emojis(text: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", cleaned)
 
 
+from src.observability.langfuse_tracer import record_llm_generation
+
+
 async def call_llm(
     messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
@@ -50,67 +53,102 @@ async def call_llm(
     """
     Invokes the configured primary model with tool-calling capabilities.
     Falls back to secondary model if the primary invocation encounters an API failure.
+    Traced end-to-end via Langfuse generation observations.
     """
     models_to_try = [settings.PRIMARY_MODEL]
     if settings.FALLBACK_MODEL and settings.FALLBACK_MODEL != settings.PRIMARY_MODEL:
         models_to_try.append(settings.FALLBACK_MODEL)
 
-    last_error: Optional[Exception] = None
+    model_params = {
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "tools_count": len(tools) if tools else 0,
+    }
 
-    for model_name in models_to_try:
-        for attempt in range(2):
-            try:
-                kwargs: Dict[str, Any] = {
-                    "model": model_name,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "timeout": 45.0
-                }
-                # Only include temperature for models that support it
-                if "gemini-3" not in model_name:
-                    kwargs["temperature"] = temperature
-                if tools:
-                    kwargs["tools"] = tools
-                    kwargs["tool_choice"] = "auto"
+    async with record_llm_generation(
+        name=f"llm:{settings.PRIMARY_MODEL.split('/')[-1]}",
+        model=settings.PRIMARY_MODEL,
+        messages=messages,
+        model_parameters=model_params
+    ) as gen:
+        last_error: Optional[Exception] = None
 
-                # Execute completion asynchronously
-                response = await litellm.acompletion(**kwargs)
-                choice = response.choices[0]
-                msg = choice.message
+        for model_name in models_to_try:
+            for attempt in range(2):
+                try:
+                    kwargs: Dict[str, Any] = {
+                        "model": model_name,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                        "timeout": 45.0
+                    }
+                    # Only include temperature for models that support it
+                    if "gemini-3" not in model_name:
+                        kwargs["temperature"] = temperature
+                    if tools:
+                        kwargs["tools"] = tools
+                        kwargs["tool_choice"] = "auto"
 
-                tool_calls = []
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        fn = tc.function
-                        try:
-                            args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
-                        except Exception:
-                            args = {"raw_arguments": fn.arguments}
-                        tool_calls.append({
-                            "id": getattr(tc, "id", f"call_{len(tool_calls)}"),
-                            "name": fn.name,
-                            "args": args
-                        })
+                    # Execute completion asynchronously
+                    response = await litellm.acompletion(**kwargs)
+                    choice = response.choices[0]
+                    msg = choice.message
 
-                raw_content = getattr(msg, "content", "") or ""
-                cleaned_content = strip_emojis(raw_content)
+                    tool_calls = []
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            fn = tc.function
+                            try:
+                                args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                            except Exception:
+                                args = {"raw_arguments": fn.arguments}
+                            tool_calls.append({
+                                "id": getattr(tc, "id", f"call_{len(tool_calls)}"),
+                                "name": fn.name,
+                                "args": args
+                            })
 
-                return {
-                    "model_used": model_name,
-                    "content": cleaned_content,
-                    "tool_calls": tool_calls
-                }
+                    raw_content = getattr(msg, "content", "") or ""
+                    cleaned_content = strip_emojis(raw_content)
 
-            except Exception as e:
-                last_error = e
-                # Transient error: backoff and retry once
-                if attempt == 0 and ("503" in str(e) or "high demand" in str(e).lower()):
-                    import asyncio
-                    await asyncio.sleep(1.5)
-                    continue
-                break
+                    # Capture token usage for Langfuse cost and latency analytics
+                    usage = getattr(response, "usage", None)
+                    usage_dict = None
+                    if usage:
+                        usage_dict = {
+                            "input": getattr(usage, "prompt_tokens", 0) or 0,
+                            "output": getattr(usage, "completion_tokens", 0) or 0,
+                            "total": getattr(usage, "total_tokens", 0) or 0
+                        }
 
-    raise RuntimeError(f"All LLM invocation attempts failed. Last error: {str(last_error)}")
+                    gen.update(
+                        model=model_name,
+                        output={"content": cleaned_content, "tool_calls": tool_calls},
+                        usage_details=usage_dict,
+                        metadata={
+                            "attempts": attempt + 1,
+                            "is_fallback": model_name != settings.PRIMARY_MODEL,
+                            "model_used": model_name
+                        }
+                    )
+
+                    return {
+                        "model_used": model_name,
+                        "content": cleaned_content,
+                        "tool_calls": tool_calls
+                    }
+
+                except Exception as e:
+                    last_error = e
+                    # Transient error: backoff and retry once
+                    if attempt == 0 and ("503" in str(e) or "high demand" in str(e).lower()):
+                        import asyncio
+                        await asyncio.sleep(1.5)
+                        continue
+                    break
+
+        gen.update(level="ERROR", status_message=str(last_error))
+        raise RuntimeError(f"All LLM invocation attempts failed. Last error: {str(last_error)}")
 
 
 def parse_openui_response(raw_text: str) -> Dict[str, Any]:

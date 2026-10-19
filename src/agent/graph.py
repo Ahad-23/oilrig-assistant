@@ -675,7 +675,13 @@ async def invoke_copilot(
 ) -> Dict[str, Any]:
     """
     Top-level invocation interface for the Asset Intelligence Copilot.
+    Instrumented with Langfuse tracing, session/user attribution, and callbacks.
     """
+    from src.observability.langfuse_tracer import (
+        propagate_agent_trace,
+        get_langfuse_callback_handler,
+    )
+
     app = get_agent_app()
     initial_state: AgentState = {
         "user_id": user_id,
@@ -692,11 +698,35 @@ async def invoke_copilot(
         "iteration_count": 0,
         "error": None
     }
-    final_state = await app.ainvoke(initial_state)
+
+    handler = get_langfuse_callback_handler()
+    config: Dict[str, Any] = {
+        "run_name": "asset-copilot-run",
+        "metadata": {
+            "langfuse_user_id": user_id,
+            "langfuse_session_id": session_id,
+        }
+    }
+    if handler:
+        config["callbacks"] = [handler]
+
+    with propagate_agent_trace(
+        trace_name="Asset Copilot Agent",
+        user_id=user_id,
+        session_id=session_id,
+        tags=["asset-copilot", "langgraph"],
+        metadata={"user_id": user_id, "session_id": session_id}
+    ) as client:
+        final_state = await app.ainvoke(initial_state, config=config)
+        trace_id = getattr(handler, "last_trace_id", None) if handler else None
+        if not trace_id and client and hasattr(client, "get_current_trace_id"):
+            trace_id = client.get_current_trace_id()
+
     return {
         "narrative": final_state.get("narrative_response", ""),
         "citations": final_state.get("citations", []),
         "generative_ui": final_state.get("generative_ui"),
         "user_id": user_id,
-        "session_id": session_id
+        "session_id": session_id,
+        "trace_id": trace_id
     }

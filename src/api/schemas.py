@@ -47,6 +47,7 @@ class ChatResponse(BaseModel):
     generative_ui: Optional[Dict[str, Any]] = Field(None, description="OpenUI component specification and props")
     user_id: str
     session_id: str
+    trace_id: Optional[str] = Field(None, description="Langfuse distributed trace identifier")
 
 
 class SessionHistoryTurn(BaseModel):
@@ -76,3 +77,19 @@ class FeedbackOverrideResponse(BaseModel):
     note_id: str
     message: str
     override_data: Optional[Dict[str, Any]] = None
+
+
+class FeedbackScoreRequest(BaseModel):
+    """User feedback score submission for Langfuse observability."""
+    trace_id: str = Field(..., description="Target Langfuse trace ID to attach score to")
+    name: str = Field("user-feedback", description="Score name, e.g. user-feedback, correctness, clarity")
+    value: Union[float, int] = Field(..., description="Numeric score value, e.g. 1.0 (positive), 0.0 (negative)")
+    comment: Optional[str] = Field(None, description="Qualitative feedback comment from operator")
+    user_id: Optional[str] = Field(None, description="Optional user submitting the feedback")
+
+
+class FeedbackScoreResponse(BaseModel):
+    """Feedback score submission confirmation."""
+    success: bool
+    trace_id: str
+    message: str

@@ -519,7 +519,28 @@ async def execute_tool(
     """
     Executes a requested tool function and returns structured results.
     Guarantees read-only safety for custom SQL and enforces error boundaries.
+    Automatically tracked in Langfuse with semantic observation types (retriever, guardrail, tool).
     """
+    from src.observability.langfuse_tracer import record_tool_execution
+
+    async with record_tool_execution(tool_name, args) as tool_obs:
+        try:
+            res = await _execute_tool_impl(tool_name, args, conn)
+            tool_obs.update(
+                output=res,
+                metadata={"status": "success", "is_error": "error" in res if isinstance(res, dict) else False}
+            )
+            return res
+        except Exception as e:
+            tool_obs.update(level="ERROR", status_message=str(e), output={"error": str(e)})
+            return {"error": f"Execution error in tool '{tool_name}': {str(e)}"}
+
+
+async def _execute_tool_impl(
+    tool_name: str,
+    args: Dict[str, Any],
+    conn: asyncpg.Connection
+) -> Dict[str, Any]:
     try:
         if tool_name == "get_schema_info":
             return {"schema": SCHEMA_INFO_PROMPT}
