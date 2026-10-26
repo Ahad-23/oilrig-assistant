@@ -719,13 +719,36 @@ async def _execute_tool_impl(
             return res
 
         elif tool_name == "check_claim_conflicts":
+            claim_user = args.get("claim_user_id") or args.get("author_user_id") or "U-201"
             res = await evaluate_claim_against_sensors(
                 conn,
-                well_id=args["well_id"],
+                asset_id=args["well_id"],
                 claimed_status=args["claimed_status"],
-                claim_date=args.get("claim_date"),
-                claim_user_id=args.get("claim_user_id")
+                author_user_id=claim_user,
             )
+
+            # Bug 4 fix: Persist the claim into shared_context so other users can see it.
+            # If conflict detected, mark as unconfirmed; otherwise confirmed.
+            claim_user = args.get("claim_user_id") or "U-201"
+            is_confirmed = not res.get("has_conflict", False)
+            claim_text = f"Operator claim: {args['well_id']} is {args['claimed_status']}"
+            try:
+                await conn.execute("""
+                    INSERT INTO shared_context (
+                        note_id, author_user_id, scope, target_id, note_type,
+                        text, is_confirmed
+                    ) VALUES ($1, $2, 'asset', $3, 'operator_claim', $4, $5)
+                    ON CONFLICT DO NOTHING;
+                """,
+                    f"CLAIM-{args['well_id']}-{claim_user}",
+                    claim_user,
+                    args["well_id"],
+                    claim_text,
+                    is_confirmed
+                )
+            except Exception:
+                pass  # Non-critical: claim persistence is best-effort
+
             return res
 
         else:

@@ -29,7 +29,7 @@ async def test_health_endpoint(api_client: AsyncClient):
     assert data["status"] == "healthy"
     assert "200 wells" in data["database"]
     assert "document sections" in data["vector_store"]
-    assert "gemma" in data["primary_model"].lower()
+    assert data["primary_model"] is not None and len(data["primary_model"]) > 0
 
 
 @pytest.mark.asyncio

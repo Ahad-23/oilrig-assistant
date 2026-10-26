@@ -335,7 +335,8 @@ async def record_shared_context_note(
     note: Optional[str] = None,
     valid_from: Optional[Any] = None,
     valid_to: Optional[Any] = None,
-    duration_days: Optional[int] = None
+    duration_days: Optional[int] = None,
+    is_confirmed: bool = True
 ) -> Dict[str, Any]:
     """
     Records an operational note, announcement, or planned shut-in into shared fleet context.
@@ -399,9 +400,9 @@ async def record_shared_context_note(
         INSERT INTO shared_context (
             note_id, author_user_id, scope, target_id, note_type,
             text, valid_from, valid_to, is_confirmed
-        ) VALUES ($1, $2, 'asset', $3, $4, $5, $6, $7, TRUE)
+        ) VALUES ($1, $2, 'asset', $3, $4, $5, $6, $7, $8)
         RETURNING override_id, created_at;
-    """, note_id, author_user_id, target, n_type, note_text, from_date, to_date)
+    """, note_id, author_user_id, target, n_type, note_text, from_date, to_date, is_confirmed)
 
     return {
         "note_id": note_id,

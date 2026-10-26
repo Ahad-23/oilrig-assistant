@@ -44,13 +44,13 @@ export const App: React.FC = () => {
         }
       } catch (err) {
         console.warn("Using offline fallback fleet users list:", err);
-        // Fallback mock users for rich standalone operation
+        // Fallback mock users matching canonical problem statement personas
         const fallbackUsers: FleetUser[] = [
-          { user_id: 'U-201', name: 'Michael Turner', role: 'AREA_LEAD', team_id: 'TEAM-01', team_name: 'Northeast Fleet Operations', area_id: 'AREA-01', area_name: 'Northeast Block 8' },
-          { user_id: 'U-202', name: 'Sarah Jenkins', role: 'ENVIRONMENTAL_DIRECTOR', team_id: 'TEAM-02', team_name: 'Compliance & Safety', area_id: 'AREA-03', area_name: 'Southwest Block 24' },
-          { user_id: 'U-203', name: 'Carlos Mendez', role: 'FIELD_TECHNICIAN', team_id: 'TEAM-01', team_name: 'Northeast Fleet Operations', area_id: 'AREA-02', area_name: 'Northeast Block 7' },
-          { user_id: 'U-204', name: 'David Ross', role: 'OPERATIONS_MANAGER', team_id: 'TEAM-03', team_name: 'Asset Executive Office' },
-          { user_id: 'U-205', name: 'Elena Rostova', role: 'DATA_SCIENTIST', team_id: 'TEAM-04', team_name: 'Predictive Analytics' },
+          { user_id: 'U-201', name: 'Michael Turner', role: 'production_supervisor', team_id: 'TEAM-NE', team_name: 'Northeast Production', area_id: 'AREA-01', area_name: 'Northeast Block 8' },
+          { user_id: 'U-202', name: 'Jessica Reed', role: 'field_inspector', team_id: 'TEAM-NE', team_name: 'Northeast Production', area_id: 'AREA-01', area_name: 'Northeast Block 8' },
+          { user_id: 'U-204', name: 'Tyler Hughes', role: 'field_operator', team_id: 'TEAM-NE', team_name: 'Northeast Production', area_id: 'AREA-02', area_name: 'Northeast Block 7' },
+          { user_id: 'U-102', name: 'Jake Morales', role: 'field_operator', team_id: 'TEAM-SW', team_name: 'Southwest Production', area_id: 'AREA-03', area_name: 'Southwest Block 23' },
+          { user_id: 'U-401', name: 'Laura Simmons', role: 'hse_officer', team_id: 'TEAM-HSE', team_name: 'Health, Safety & Environment', area_id: 'AREA-ALL', area_name: 'All Areas' },
         ];
         setUsers(fallbackUsers);
         setActiveUser(fallbackUsers[0]);

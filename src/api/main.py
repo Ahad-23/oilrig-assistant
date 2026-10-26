@@ -574,3 +574,42 @@ async def submit_feedback_score(request: FeedbackScoreRequest) -> FeedbackScoreR
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to submit feedback score: {str(e)}"
         )
+
+
+@app.get("/api/history/{user_id}/{session_id}", response_model=List[SessionHistoryTurn])
+async def get_session_history(user_id: str, session_id: str) -> List[SessionHistoryTurn]:
+    """
+    Returns private conversational turns for a specific user and session.
+    Enforces strict user-level and session-level isolation.
+    """
+    session_store = SessionStore.get_instance()
+    conn = None
+    try:
+        conn = await get_raw_asyncpg_connection()
+        raw_turns = await session_store.get_recent_history_persistent(conn, user_id, session_id, limit=50)
+    except Exception:
+        raw_turns = session_store.get_recent_history(user_id, session_id, limit=50)
+    finally:
+        if conn:
+            await conn.close()
+
+    return [
+        SessionHistoryTurn(
+            user_query=t.get("user_query", ""),
+            narrative_response=t.get("narrative_response", ""),
+            timestamp=t.get("timestamp", ""),
+            discussed_assets=t.get("discussed_assets", []),
+            citations=t.get("citations", []),
+            generative_ui=t.get("generative_ui")
+        )
+        for t in raw_turns
+    ]
+
+
+@app.post("/api/history/clear")
+async def clear_session_history(user_id: str, session_id: str) -> Dict[str, Any]:
+    """Clears conversational turns for a specific user session."""
+    session_store = SessionStore.get_instance()
+    session_store.clear_session(user_id, session_id)
+    return {"status": "cleared", "user_id": user_id, "session_id": session_id}
+

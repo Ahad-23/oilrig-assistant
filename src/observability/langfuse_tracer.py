@@ -145,17 +145,20 @@ def propagate_agent_trace(
         merged_tags = list(set((tags or []) + default_tags))
         clean_metadata = mask_sensitive_data(metadata or {})
 
-        with propagate_attributes(
+        prop_ctx = propagate_attributes(
             trace_name=trace_name,
             user_id=user_id,
             session_id=session_id,
             tags=merged_tags,
             metadata=clean_metadata,
-        ):
-            yield get_langfuse_client()
+        )
     except Exception as e:
-        logger.warning(f"Error propagating Langfuse attributes: {e}")
+        logger.warning(f"Error preparing Langfuse attributes: {e}")
         yield None
+        return
+
+    with prop_ctx:
+        yield get_langfuse_client()
 
 
 @contextlib.asynccontextmanager
@@ -179,17 +182,20 @@ async def record_llm_generation(
     clean_params = model_parameters or {}
 
     try:
-        with client.start_as_current_observation(
+        obs_ctx = client.start_as_current_observation(
             name=name,
             as_type="generation",
             model=model,
             input=clean_messages,
             model_parameters=clean_params,
-        ) as gen:
-            yield gen
+        )
     except Exception as e:
         logger.debug(f"Langfuse generation observation error: {e}")
         yield _NoOpObservation()
+        return
+
+    with obs_ctx as gen:
+        yield gen
 
 
 @contextlib.asynccontextmanager
@@ -218,16 +224,19 @@ async def record_tool_execution(
 
     clean_args = mask_sensitive_data(args)
     try:
-        with client.start_as_current_observation(
+        obs_ctx = client.start_as_current_observation(
             name=f"tool:{tool_name}",
             as_type=obs_type,
             input=clean_args,
             metadata={"tool_name": tool_name, "observation_type": obs_type}
-        ) as tool_obs:
-            yield tool_obs
+        )
     except Exception as e:
         logger.debug(f"Langfuse tool observation error: {e}")
         yield _NoOpObservation()
+        return
+
+    with obs_ctx as tool_obs:
+        yield tool_obs
 
 
 def score_agent_trace(

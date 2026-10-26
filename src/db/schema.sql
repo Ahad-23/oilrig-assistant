@@ -190,3 +190,19 @@ CREATE TABLE IF NOT EXISTS shared_context (
 );
 CREATE INDEX IF NOT EXISTS idx_shared_context_target ON shared_context(target_id);
 
+-- 12. User Session Turns (Private Conversational Memory)
+-- Persists discussed entities per user so "the wells we discussed yesterday" works
+-- across server restarts, workers, and new chat sessions.
+CREATE TABLE IF NOT EXISTS session_turns (
+    turn_id SERIAL PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    user_query TEXT NOT NULL,
+    narrative_response TEXT NOT NULL,
+    discussed_assets TEXT[] DEFAULT '{}',
+    citations JSONB DEFAULT '[]'::jsonb,
+    generative_ui JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_session_turns_user ON session_turns(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(user_id, session_id, created_at DESC);

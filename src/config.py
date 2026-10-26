@@ -22,10 +22,18 @@ class Settings(BaseSettings):
         return f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # LLM & API Keys
+    GROQ_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     OPEN_ROUTER_API_KEY: Optional[str] = None
-    PRIMARY_MODEL: str = "openrouter/google/gemma-4-26b-a4b-it"
-    FALLBACK_MODEL: str = "openrouter/google/gemma-4-31b-it"
+
+    # Task-Specific OpenRouter Free Models
+    PRIMARY_MODEL: str = "openrouter/nvidia/nemotron-3.5-lightning:free"
+    FALLBACK_MODEL: str = "openrouter/openrouter/free"
+    MODEL_TOOL_PLANNER: str = "openrouter/nvidia/nemotron-3.5-lightning:free"
+    MODEL_REASONER: str = "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+    MODEL_SYNTHESIZER: str = "openrouter/minimax/minimax-m3.1-flash:free"
+    MODEL_SAFETY_NET: str = "openrouter/openrouter/free"
+
     MODEL_TEMPERATURE: float = 0.0
     MODEL_MAX_TOKENS: int = 4096
 

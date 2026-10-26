@@ -112,16 +112,43 @@ async def load_context_node(state: AgentState) -> Dict[str, Any]:
                 )
             active_overrides_text = "\nActive Overrides & Shared Fleet Context:\n" + "\n".join(override_lines)
 
+        # Load previous session turns for this user_id:session_id
+        session_store = SessionStore.get_instance()
+        prior_turns = await session_store.get_recent_history_persistent(
+            conn, user_id, session_id, limit=5
+        )
+
+        # Check if this user has discussed assets in ANY session (cross-session)
+        # This enables "the wells we discussed yesterday" in a new chat
+        cross_session_assets = []
+        q_lower = user_query.lower()
+        is_followup = any(phrase in q_lower for phrase in [
+            "we discussed", "yesterday", "these wells", "those wells",
+            "the three wells", "the wells", "we talked about"
+        ])
+        if not prior_turns and is_followup:
+            cross_session_assets = await session_store.get_discussed_assets_persistent(
+                conn, user_id, session_id, limit_turns=10
+            )
+
+        session_isolation_hint = ""
+        if not prior_turns and not cross_session_assets:
+            session_isolation_hint = (
+                "\n\nSession Context: This is turn 1 of a new session. You have "
+                "NO prior conversation history with this user. If the user refers "
+                "to 'we discussed', 'yesterday', or 'these wells' without naming "
+                "assets, state clearly that you have no record of an earlier "
+                "conversation with them and ask them to specify which wells they mean."
+            )
+        elif cross_session_assets:
+            session_isolation_hint = (
+                f"\n\nSession Context: New chat, but this user previously discussed "
+                f"these assets: {', '.join(cross_session_assets)}. Use these if the "
+                f"user refers to prior conversations."
+            )
+
     finally:
         await conn.close()
-
-    # Load previous session turns strictly for this user_id:session_id
-    session_store = SessionStore.get_instance()
-    prior_turns = session_store.get_recent_history(user_id, session_id, limit=5)
-
-    session_isolation_hint = ""
-    if not prior_turns:
-        session_isolation_hint = "\n\nSession Context: This is turn 1 of a new session. You have NO prior conversation history with this user. If the user refers to 'we discussed', 'yesterday', or 'these wells' without naming assets, state clearly that you have no record of an earlier conversation with them and ask them to specify which wells they mean."
 
     # 3. Build dynamic system prompt tailored to user and active overrides
     user_context_str = f"Current User: {user_profile.get('name', user_id)} (Role: {user_profile.get('role', 'Operator')}, Area: {user_profile.get('area_id', 'All')})" if user_profile else f"Current User: {user_id}"
@@ -156,13 +183,28 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
     """
     messages = list(state.get("messages", []))
     iteration = state.get("iteration_count", 0) + 1
-
     litellm_messages = _messages_to_litellm_dict(messages)
 
-    # Invoke LLM
+    # Determine task for model specialization
+    has_tool_results = any(isinstance(m, ToolMessage) or getattr(m, "type", "") == "tool" for m in messages)
+    user_query = state.get("user_query", "").lower()
+    is_reasoning_heavy = any(k in user_query for k in [
+        "conflict", "contradict", "disagree", "why", "root cause", "rca", 
+        "breach", "violation", "fine", "sr-01", "sr-02", "sr-03", "rc-04"
+    ])
+
+    if has_tool_results:
+        task = "synthesis"
+    elif is_reasoning_heavy:
+        task = "reasoning"
+    else:
+        task = "planner"
+
+    # Invoke task-specialized LLM with automatic fallback cascade
     response = await call_llm(
         messages=litellm_messages,
         tools=AGENT_TOOLS_DEFINITIONS,
+        task=task,
         temperature=0.0
     )
 
@@ -222,6 +264,10 @@ async def execute_tools_node(state: AgentState) -> Dict[str, Any]:
                     "apply_policy_override", "record_shared_context_note"
                 ]:
                     args["author_user_id"] = state.get("user_id", "U-201")
+
+                # Inject claim_user_id for conflict checks so the claim is attributed to the active user
+                if name == "check_claim_conflicts" and not args.get("claim_user_id"):
+                    args["claim_user_id"] = state.get("user_id", "U-201")
 
                 res = await execute_tool(name, args, conn)
 
@@ -585,15 +631,33 @@ async def synthesize_and_save_node(state: AgentState) -> Dict[str, Any]:
     if discussed_assets and not any(a in narrative for a in discussed_assets):
         narrative += f"\n\nAssets: {', '.join(discussed_assets)}"
 
-    # Persist in private SessionStore
+    # Persist in private SessionStore (in-memory + PostgreSQL)
     session_store = SessionStore.get_instance()
-    session_store.record_turn(
-        user_id=user_id,
-        session_id=session_id,
-        user_query=user_query,
-        narrative_response=narrative,
-        discussed_assets=discussed_assets
-    )
+    conn = None
+    try:
+        conn = await get_raw_asyncpg_connection()
+        await session_store.record_turn_persistent(
+            conn=conn,
+            user_id=user_id,
+            session_id=session_id,
+            user_query=user_query,
+            narrative_response=narrative,
+            discussed_assets=discussed_assets,
+            citations=citations,
+            generative_ui=generative_ui
+        )
+    except Exception:
+        # Fallback to in-memory only if DB write fails
+        session_store.record_turn(
+            user_id=user_id,
+            session_id=session_id,
+            user_query=user_query,
+            narrative_response=narrative,
+            discussed_assets=discussed_assets
+        )
+    finally:
+        if conn:
+            await conn.close()
 
     return {
         "narrative_response": narrative,
